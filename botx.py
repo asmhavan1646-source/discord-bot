@@ -12,7 +12,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="", intents=intents, case_insensitive=True)
 
 # --- TEK KANAL ID AYARI ---
-ALLOWED_CHANNEL_ID = 1535569350403297381  # Botun çalışacağı kanalın ID'si
+ALLOWED_CHANNEL_ID = 1535753835308392509  # Botun çalışacağı kanalın ID'si
 
 @bot.check
 async def globally_block_channels(ctx):
