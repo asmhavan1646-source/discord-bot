@@ -20,7 +20,7 @@ async def globally_block_channels(ctx):
         return False
     return True
 
-# --- SQLITE VERİTABANI SİSTEMİ ---
+# --- SQLITE VERİTABANI SİSTEMİ (Paralar asla silinmez!) ---
 db = sqlite3.connect("economy.db")
 cursor = db.cursor()
 
