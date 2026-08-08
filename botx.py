@@ -104,35 +104,98 @@ async def daily(ctx):
     
     await ctx.send(f"🎁 **{ctx.author.name}**, günlük ödülün: **{reward:,} 🪙**. Bir sonraki ödülün **{(streak + 1) * 5000:,} 🪙** olacak!")
 
-# --- ŞANSLI ÇARK (ROULETTE / CARK) ---
-@bot.command(name="roulette", aliases=["cark"])
-async def roulette(ctx, color: str, amount_str: str):
+# ==========================================
+# --- GERÇEK RULET SİSTEMİ (%5 Kazanma Oranı) ---
+# ==========================================
+@bot.command(name="rulet")
+async def rulet(ctx, choice: str, amount_str: str):
     user_id = str(ctx.author.id)
-    color = color.lower()
+    choice = choice.lower()
     
-    if color not in ["kırmızı", "siyah", "yeşil"]:
-        return await ctx.send("Renk seçimi yanlış kanka! Şunlardan birini yazmalısın: `kırmızı`, `siyah`, `yeşil`")
-        
     amount = get_bet_amount(user_id, amount_str)
     current_bal = get_balance(user_id)
     if amount is None or amount <= 0 or current_bal < amount:
         return await ctx.send("Geçersiz miktar veya yetersiz bakiye kanka!")
-        
-    msg = await ctx.send("🎡 Şans çarkı dönüyor...")
+
+    # Avrupa ruleti sayıları (0 yeşil, diğerleri kırmızı/siyah)
+    red_numbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
+    black_numbers = [2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]
+    
+    # Geçerli tahmin kontrolü
+    is_valid_choice = False
+    if choice in ["kırmızı", "siyah", "yeşil", "tek", "cift"]:
+        is_valid_choice = True
+    elif choice.isdigit():
+        num_val = int(choice)
+        if 0 <= num_val <= 36:
+            is_valid_choice = True
+            
+    if not is_valid_choice:
+        return await ctx.send("Yanlış seçim kanka! Şunlardan birini yazmalısın:\n• `rulet kırmızı [miktar]`\n• `rulet siyah [miktar]`\n• `rulet tek/cift [miktar]`\n• `rulet [0-36 arası sayı] [miktar]`")
+
+    msg = await ctx.send("🎡 Rulet çarkı çevriliyor, top dönüyor...")
     await asyncio.sleep(1.5)
+
+    # %5 Kazanma Şansı Ayarlaması
+    win_check = random.choices([True, False], weights=[5, 95], k=1)[0]
     
-    outcome = random.choices(["kırmızı", "siyah", "yeşil"], weights=[45, 45, 10], k=1)[0]
-    
-    if outcome == color:
-        multiplier = 10 if outcome == "yeşil" else 2
-        won_amount = amount * multiplier
-        update_balance(user_id, current_bal + won_amount)
-        await msg.edit(content=f"🎯 Çark durdu: **{outcome.upper()}**! Tebrikler kazandın! +**{won_amount:,} 🪙**")
+    if win_check:
+        # Oyuncunun kazanması istendiyse, tam onun tahminine uygun bir sonuç üretelim
+        if choice == "kırmızı":
+            landed_number = random.choice(red_numbers)
+        elif choice == "siyah":
+            landed_number = random.choice(black_numbers)
+        elif choice == "yeşil":
+            landed_number = 0
+        elif choice == "tek":
+            landed_number = random.choice([n for n in range(1, 37) if n % 2 != 0])
+        elif choice == "cift":
+            landed_number = random.choice([n for n in range(1, 37) if n % 2 == 0])
+        else: # Sayı seçtiyse direkt o sayı gelsin
+            landed_number = int(choice)
+    else:
+        # %95 ihtimalle rastgele zar atılır (büyük ihtimalle kaybeder)
+        landed_number = random.randint(0, 36)
+
+    # Rengi belirle
+    if landed_number == 0:
+        color_name = "🟢 YEŞİL (0)"
+    elif landed_number in red_numbers:
+        color_name = f"🔴 KIRMIZI ({landed_number})"
+    else:
+        color_name = f"⬛ SİYAH ({landed_number})"
+
+    # Kazanç hesaplama
+    won = 0
+    won_flag = False
+
+    if choice.isdigit() and int(choice) == landed_number:
+        won = amount * 35
+        won_flag = True
+    elif choice == "kırmızı" and landed_number in red_numbers:
+        won = amount * 2
+        won_flag = True
+    elif choice == "siyah" and landed_number in black_numbers:
+        won = amount * 2
+        won_flag = True
+    elif choice == "yeşil" and landed_number == 0:
+        won = amount * 14
+        won_flag = True
+    elif choice == "tek" and landed_number != 0 and landed_number % 2 != 0:
+        won = amount * 2
+        won_flag = True
+    elif choice == "cift" and landed_number != 0 and landed_number % 2 == 0:
+        won = amount * 2
+        won_flag = True
+
+    if won_flag:
+        update_balance(user_id, current_bal + won)
+        await msg.edit(content=f"🎯 Top **{color_name}** üzerinde durdu! Tebrikler kazandın! +**{won:,} 🪙**")
     else:
         update_balance(user_id, current_bal - amount)
-        await msg.edit(content=f"😢 Çark durdu: **{outcome.upper()}** geldi. Kaybettin kanka! -**{amount:,} 🪙**")
+        await msg.edit(content=f"😢 Top **{color_name}** üzerinde durdu. Kaybettin kanka! -**{amount:,} 🪙**")
 
-# --- KASA AÇMA SİSTEMİ (İstediğin gibi güncellendi) ---
+# --- KASA AÇMA SİSTEMİ ---
 @bot.command(name="kasa", aliases=["lootbox"])
 async def open_box(ctx, box_type: str = None):
     user_id = str(ctx.author.id)
@@ -160,19 +223,16 @@ async def open_box(ctx, box_type: str = None):
     await asyncio.sleep(1.5)
     
     if box_type == "normal":
-        # 10 binlik: En az 1.000, üst sınır 25.000
         reward = random.choices(
             [random.randint(1000, 5000), random.randint(5001, 15000), random.randint(15001, 25000)],
             weights=[50, 35, 15], k=1
         )[0]
     elif box_type == "lüks":
-        # 50 binlik: En az 10.000, üst sınır 80.000
         reward = random.choices(
             [random.randint(10000, 30000), random.randint(30001, 55000), random.randint(55001, 80000)],
             weights=[50, 35, 15], k=1
         )[0]
     else:
-        # 100 binlik: En az 50.000, üst sınır 180.000
         reward = random.choices(
             [random.randint(50000, 80000), random.randint(80001, 120000), random.randint(120001, 180000)],
             weights=[50, 35, 15], k=1
@@ -350,9 +410,8 @@ async def hpay(ctx, member: discord.Member, amount: int):
     await ctx.send(f"💸 **{member.name}** kişisine **{amount:,} 🪙** gönderildi!")
 
 # ==========================================
-# --- COINFLIP (HF) - %50 KAZANMA ORANI ---
+# --- COINFLIP (HF) - %5 Kazanma Oranı ---
 # ==========================================
-
 @bot.command(name="hf")
 async def coinflip(ctx, amount_str: str):
     user_id = str(ctx.author.id)
@@ -363,7 +422,7 @@ async def coinflip(ctx, amount_str: str):
     if current_bal < amount:
         return await ctx.send("Yetersiz bakiye kanka!")
 
-    win_chance = random.choices([True, False], weights=[50, 50], k=1)[0]
+    win_chance = random.choices([True, False], weights=[5, 95], k=1)[0]
 
     if win_chance:
         update_balance(user_id, current_bal + amount)
@@ -373,9 +432,8 @@ async def coinflip(ctx, amount_str: str):
         await ctx.send(f"🪙 **{ctx.author.name}** kaybetti! -**{amount:,} 🪙** :c")
 
 # ==========================================
-# --- SLOTS (HS / WS) - %50 KAZANMA ORANI ---
+# --- SLOTS (HS / WS) - %5 Kazanma Oranı ---
 # ==========================================
-
 @bot.command(name="hs", aliases=["ws"])
 async def slots(ctx, amount_str: str):
     user_id = str(ctx.author.id)
@@ -398,7 +456,7 @@ async def slots(ctx, amount_str: str):
     msg = await ctx.send(embed=spin_embed)
     await asyncio.sleep(0.8)
 
-    win_chance = random.choices([True, False], weights=[50, 50], k=1)[0]
+    win_chance = random.choices([True, False], weights=[5, 95], k=1)[0]
 
     if win_chance:
         chosen_fruit = random.choice(fruits)
@@ -446,9 +504,8 @@ async def slots(ctx, amount_str: str):
     await msg.edit(embed=final_embed)
 
 # ==========================================
-# --- BLACKJACK (HJ) - %50 KAZANMA ORANI ---
+# --- BLACKJACK (HJ) - %5 Kazanma Oranı ---
 # ==========================================
-
 class BlackjackView(discord.ui.View):
     def __init__(self, ctx, user_id, amount):
         super().__init__(timeout=60)
@@ -459,7 +516,7 @@ class BlackjackView(discord.ui.View):
         self.cards = [("🂡", 11), ("🂢", 2), ("🂣", 3), ("🂤", 4), ("🂥", 5), ("🂦", 6), ("🂧", 7), ("🂨", 8), ("🂩", 9), ("🂪", 10), ("🂫", 10), ("🂭", 10), ("🂮", 10),
                      ("🃁", 11), ("🃂", 2), ("🃃", 3), ("🃄", 4), ("🃅", 5), ("🃆", 6), ("🃇", 7), ("🃈", 8), ("🃉", 9), ("🃊", 10), ("🃋", 10), ("🃍", 10), ("🃎", 10)]
         
-        win_bias = random.choices([True, False], weights=[50, 50], k=1)[0]
+        win_bias = random.choices([True, False], weights=[5, 95], k=1)[0]
         if win_bias:
             self.player_hand = [("🂪", 10), ("🂫", 10)]
             self.dealer_hand = [("🂦", 6), ("🂤", 4)]
@@ -576,7 +633,7 @@ async def hbilgi(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="💰 Ekonomi Komutları", value="`!h` - Cüzdanını görürsün\n`!daily` - Günlük ödülünü alırsın\n`!hpay` - Başkasına para gönderirsin\n`!lb` - Servet sıralamasına bakarsın", inline=False)
-    embed.add_field(name="🎲 Kumar & Şans Oyunları", value="`!hf` - Coinflip (Yazı/Tura)\n`!hs` (veya `!ws`) - Slots\n`!hj` - Blackjack\n`!cark` - Şans çarkı\n`!kasa` - Kasa açma", inline=False)
+    embed.add_field(name="🎲 Kumar & Şans Oyunları", value="`!hf` - Coinflip (Yazı/Tura)\n`!hs` (veya `!ws`) - Slots\n`!hj` - Blackjack\n`!rulet` - Gerçek Rulet\n`!kasa` - Kasa açma", inline=False)
     embed.add_field(name="🛠️ Yönetici Komutları", value="`!add` - Para eklersin\n`!hparasil` - Para silersin\n`!sil` - Mesaj temizlersin", inline=False)
     embed.set_footer(text="HelperX ile iyi eğlenceler dileriz!")
     await ctx.send(embed=embed)
