@@ -1,3 +1,4 @@
+import sqlite3
 import asyncio
 import datetime
 import json
@@ -21,49 +22,40 @@ async def globally_block_channels(ctx):
         return False
     return True
 
-# --- VERİLERİ DİSKE KESİN KAYDEDEN SİSTEM ---
-DATA_FILE = "economy_data.json"
+# --- SQLITE VERİTABANI SİSTEMİ ---
+db = sqlite3.connect("economy.db")
+cursor = db.cursor()
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-                balances = {int(k): v for k, v in data.get("balances", {}).items()}
-                banks = {int(k): v for k, v in data.get("banks", {}).items()}
-                streaks = {int(k): v for k, v in data.get("streaks", {}).items()}
-                return balances, banks, streaks
-            except:
-                return {}, {}, {}
-    return {}, {}, {}
-
-def save_data():
-    data = {
-        "balances": user_balances,
-        "banks": user_banks,
-        "streaks": daily_streaks
-    }
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-        f.flush()
-        os.fsync(f.fileno())
-
-user_balances, user_banks, daily_streaks = load_data()
-daily_cooldowns = {}
-crime_cooldowns = {}
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS economy (
+    user_id TEXT PRIMARY KEY,
+    balance INTEGER DEFAULT 160000,
+    bank INTEGER DEFAULT 0,
+    streak INTEGER DEFAULT 0
+)
+""")
+db.commit()
 
 def get_balance(user_id):
-    if user_id not in user_balances:
-        user_balances[user_id] = 160000
-        save_data()
-    return user_balances[user_id]
-
-def get_bank(user_id):
-    if user_id not in user_banks:
-        user_banks[user_id] = 0
-        save_data()
-    return user_banks[user_id]
-
+    user_id = str(user_id)
+    cursor.execute("SELECT balance FROM economy WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    
+    if result is None:
+        cursor.execute("INSERT OR REPLACE INTO economy (user_id, balance, bank, streak) VALUES (?, 160000, 0, 0)", (user_id,))
+        db.commit()
+        return 160000
+    return result[0]
+    def get_bank(user_id):
+    user_id = str(user_id)
+    cursor.execute("SELECT bank FROM economy WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    
+    if result is None:
+        cursor.execute("INSERT OR REPLACE INTO economy (user_id, balance, bank, streak) VALUES (?, 160000, 0, 0)", (user_id,))
+        db.commit()
+        return 0
+    return result[0]
 def get_bet_amount(user_id, amount_str):
     balance = get_balance(user_id)
     if amount_str.lower() == "all":
