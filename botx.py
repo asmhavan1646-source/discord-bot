@@ -11,15 +11,6 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="", intents=intents, case_insensitive=True)
 
-# --- TEK KANAL ID AYARI ---
-ALLOWED_CHANNEL_ID = 1535753835308392509  # Botun çalışacağı kanalın ID'si
-
-@bot.check
-async def globally_block_channels(ctx):
-    if ctx.channel.id != ALLOWED_CHANNEL_ID:
-        return False
-    return True
-
 # --- KALICI DİSK VERİTABANI SİSTEMİ (Paralar asla silinmez!) ---
 db_path = "/var/data/economy.db" if os.path.exists("/var/data") else "economy.db"
 db = sqlite3.connect(db_path)
@@ -141,13 +132,13 @@ async def roulette(ctx, color: str, amount_str: str):
         update_balance(user_id, current_bal - amount)
         await msg.edit(content=f"😢 Çark durdu: **{outcome.upper()}** geldi. Kaybettin kanka! -**{amount:,} 🪙**")
 
-# --- KASA AÇMA SİSTEMİ ---
+# --- KASA AÇMA SİSTEMİ (İstediğin gibi güncellendi) ---
 @bot.command(name="kasa", aliases=["lootbox"])
 async def open_box(ctx, box_type: str = None):
     user_id = str(ctx.author.id)
     
     if not box_type or box_type.lower() not in ["normal", "lüks", "luks", "mega"]:
-        return await ctx.send("Hangi kasayı açmak istiyorsun kanka? Seçenekler:\n• `kasa normal` (10.000 🪙)\n• `kasa lüks` (50.000 🪙)\n• `kasa mega` (100.000 🪙)")
+        return await ctx.send("Hangi kasayı açmak istiyorsun kanka? Seçenekler:\n• `kasa normal` (10.000 🪙 - En az 1.000)\n• `kasa lüks` (50.000 🪙 - En az 10.000)\n• `kasa mega` (100.000 🪙 - En az 50.000)")
         
     box_type = box_type.lower()
     
@@ -169,19 +160,22 @@ async def open_box(ctx, box_type: str = None):
     await asyncio.sleep(1.5)
     
     if box_type == "normal":
+        # 10 binlik: En az 1.000, üst sınır 25.000
         reward = random.choices(
-            [random.randint(10000, 20000), random.randint(20001, 35000), random.randint(35001, 50000)],
-            weights=[60, 30, 10], k=1
+            [random.randint(1000, 5000), random.randint(5001, 15000), random.randint(15001, 25000)],
+            weights=[50, 35, 15], k=1
         )[0]
     elif box_type == "lüks":
+        # 50 binlik: En az 10.000, üst sınır 80.000
         reward = random.choices(
-            [random.randint(50000, 65000), random.randint(65001, 85000), random.randint(85001, 100000)],
-            weights=[60, 30, 10], k=1
+            [random.randint(10000, 30000), random.randint(30001, 55000), random.randint(55001, 80000)],
+            weights=[50, 35, 15], k=1
         )[0]
     else:
+        # 100 binlik: En az 50.000, üst sınır 180.000
         reward = random.choices(
-            [random.randint(100000, 130000), random.randint(130001, 180000), random.randint(180001, 250000)],
-            weights=[60, 30, 10], k=1
+            [random.randint(50000, 80000), random.randint(80001, 120000), random.randint(120001, 180000)],
+            weights=[50, 35, 15], k=1
         )[0]
         
     update_balance(user_id, get_balance(user_id) + reward)
