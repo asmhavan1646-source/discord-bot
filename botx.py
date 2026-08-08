@@ -371,23 +371,6 @@ async def hpay(ctx, member: discord.Member, amount: int):
     if amount > 1000000:
         await ctx.send("Tek seferde en fazla **10000000 🪙** gönderebilirsin!")
         return
-
-    current_time = time.time()
-    if sender_id in hpay_cooldowns:
-        last_time, sent_total = hpay_cooldowns[sender_id]
-        if current_time - last_time < 3600:
-            if sent_total + amount > 1000000:
-                left_time = int(3600 - (current_time - last_time))
-                dakika = left_time // 60
-                await ctx.send(f"Saatlik 10000.000 🪙 limitine ulaştın! Tekrar para göndermek için **{dakika} dakika** beklemelisin.")
-                return
-            else:
-                hpay_cooldowns[sender_id] = (last_time, sent_total + amount)
-        else:
-            hpay_cooldowns[sender_id] = (current_time, amount)
-    else:
-        hpay_cooldowns[sender_id] = (current_time, amount)
-
     sender_wallet = get_balance(sender_id)
     if sender_wallet < amount:
         await ctx.send("Cüzdanında transfer için yeterli para yok!")
