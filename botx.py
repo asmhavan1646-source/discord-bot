@@ -1,10 +1,8 @@
 import sqlite3
 import asyncio
 import datetime
-import json
 import os
 import random
-import time
 import discord
 from discord.ext import commands, tasks
 
@@ -46,16 +44,28 @@ def get_balance(user_id):
         db.commit()
         return 160000
     return result[0]
-    def get_bank(user_id):
-                user_id = str(user_id)
-                cursor.execute("SELECT bank FROM economy WHERE user_id = ?", (user_id,))
-                result = cursor.fetchone()
+
+def get_bank(user_id):
+    user_id = str(user_id)
+    cursor.execute("SELECT bank FROM economy WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
     
     if result is None:
         cursor.execute("INSERT OR REPLACE INTO economy (user_id, balance, bank, streak) VALUES (?, 160000, 0, 0)", (user_id,))
         db.commit()
         return 0
     return result[0]
+
+def update_balance(user_id, amount):
+    user_id = str(user_id)
+    cursor.execute("UPDATE economy SET balance = ? WHERE user_id = ?", (amount, user_id))
+    db.commit()
+
+def update_bank(user_id, amount):
+    user_id = str(user_id)
+    cursor.execute("UPDATE economy SET bank = ? WHERE user_id = ?", (amount, user_id))
+    db.commit()
+
 def get_bet_amount(user_id, amount_str):
     balance = get_balance(user_id)
     if amount_str.lower() == "all":
@@ -69,12 +79,13 @@ def get_bet_amount(user_id, amount_str):
 # --- OTOMATİK FAİZ DÖNGÜSÜ (Her 1 saate bir %10 faiz) ---
 @tasks.loop(hours=1)
 async def bank_interest():
-    for user_id in list(user_banks.keys()):
-        current_bank = user_banks[user_id]
-        if current_bank > 0:
-            added_interest = int(current_bank * 0.10)
-            user_banks[user_id] += added_interest
-    save_data()
+    cursor.execute("SELECT user_id, bank FROM economy WHERE bank > 0")
+    users = cursor.fetchall()
+    for user_id, current_bank in users:
+        added_interest = int(current_bank * 0.10)
+        new_bank = current_bank + added_interest
+        cursor.execute("UPDATE economy SET bank = ? WHERE user_id = ?", (new_bank, user_id))
+    db.commit()
 
 @bot.event
 async def on_ready():
@@ -85,87 +96,34 @@ async def on_ready():
 # --- GÜNLÜK ÖDÜL ---
 @bot.command(name="daily")
 async def daily(ctx):
-    user_id = ctx.author.id
-    now = datetime.datetime.now()
-    
-    if user_id not in daily_streaks:
-        daily_streaks[user_id] = 1
-    
-    if user_id in daily_cooldowns:
-        last_time = daily_cooldowns[user_id]
-        if (now - last_time).total_seconds() < 86400:
-            remaining = datetime.timedelta(seconds=86400) - (now - last_time)
-            hours = int(remaining.total_seconds() // 3600)
-            minutes = int((remaining.total_seconds() % 3600) // 60)
-            return await ctx.send(f"⏳ | **{ctx.author.name}**, bir sonraki ödülüne **{hours} saat {minutes} dakika** var.")
+    user_id = str(ctx.author.id)
+    cursor.execute("SELECT streak FROM economy WHERE user_id = ?", (user_id,))
+    res = cursor.fetchone()
+    streak = res[0] if res else 0
+    if streak == 0:
+        streak = 1
 
-    reward = daily_streaks[user_id] * 5000
-    user_balances[user_id] = get_balance(user_id) + reward
-    daily_streaks[user_id] += 1
-    daily_cooldowns[user_id] = now
-    save_data()
+    reward = streak * 5000
+    current_bal = get_balance(user_id)
+    update_balance(user_id, current_bal + reward)
     
-    await ctx.send(f"🎁 **{ctx.author.name}**, günlük ödülün: **{reward:,} 🪙**. Bir sonraki ödülün **{(daily_streaks[user_id]) * 5000:,} 🪙** olacak!")
-
-# --- SOYGUN (CRIME) ---
-@bot.command(name="crime")
-async def crime(ctx):
-    user_id = ctx.author.id
-    now = datetime.datetime.now()
+    cursor.execute("UPDATE economy SET streak = ? WHERE user_id = ?", (streak + 1, user_id))
+    db.commit()
     
-    is_owner = any(role.name.lower() == "owner" for role in ctx.author.roles)
-    
-    if not is_owner:
-        if user_id in crime_cooldowns:
-            last_time = crime_cooldowns[user_id]
-            if (now - last_time).total_seconds() < 7200:
-                remaining = datetime.timedelta(seconds=7200) - (now - last_time)
-                hours = int(remaining.total_seconds() // 3600)
-                minutes = int((remaining.total_seconds() % 3600) // 60)
-                return await ctx.send(f"⏳ | Polisler peşinde! Saklanmak için **{hours} saat {minutes} dakika** beklemelisin.")
-        crime_cooldowns[user_id] = now
-            
-    owner_text = " (Owner Modu: Sınır Yok!)" if is_owner else ""
-    
-    if is_owner:
-        stolen = 100000
-        user_balances[user_id] = get_balance(user_id) + stolen
-        save_data()
-        return await ctx.send(f"💎 **OWNER EFSANE VURGUN!** Kral devleti soydun! Cüzdanına **{stolen:,} 🪙** eklendi!{owner_text}")
-
-    success = random.choice([True, False])
-    
-    if success:
-        is_jackpot = random.choices([True, False], weights=[10, 90], k=1)[0]
-        
-        if is_jackpot:
-            stolen = 100000
-            user_balances[user_id] = get_balance(user_id) + stolen
-            await ctx.send(f"💎 **EFSANE VURGUN!** Büyük bankayı soydun! Cüzdanına **{stolen:,} 🪙** eklendi!")
-        else:
-            stolen = random.randint(20000, 50000)
-            user_balances[user_id] = get_balance(user_id) + stolen
-            await ctx.send(f"🥷 Süper soygun! Kasayı soyup kaçtın: **{stolen:,} 🪙**")
-    else:
-        fine = random.randint(10000, 25000)
-        current_bal = get_balance(user_id)
-        lost = min(fine, current_bal)
-        user_balances[user_id] = current_bal - lost
-        await ctx.send(f"🚨 Polis bastı! Ceza olarak **{lost:,} 🪙** kaptırdın!")
-    
-    save_data()
+    await ctx.send(f"🎁 **{ctx.author.name}**, günlük ödülün: **{reward:,} 🪙**. Bir sonraki ödülün **{(streak + 1) * 5000:,} 🪙** olacak!")
 
 # --- ŞANSLI ÇARK (ROULETTE / CARK) ---
 @bot.command(name="roulette", aliases=["cark"])
 async def roulette(ctx, color: str, amount_str: str):
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     color = color.lower()
     
     if color not in ["kırmızı", "siyah", "yeşil"]:
         return await ctx.send("Renk seçimi yanlış kanka! Şunlardan birini yazmalısın: `kırmızı`, `siyah`, `yeşil`")
         
     amount = get_bet_amount(user_id, amount_str)
-    if amount is None or amount <= 0 or get_balance(user_id) < amount:
+    current_bal = get_balance(user_id)
+    if amount is None or amount <= 0 or current_bal < amount:
         return await ctx.send("Geçersiz miktar veya yetersiz bakiye kanka!")
         
     msg = await ctx.send("🎡 Şans çarkı dönüyor...")
@@ -176,18 +134,16 @@ async def roulette(ctx, color: str, amount_str: str):
     if outcome == color:
         multiplier = 10 if outcome == "yeşil" else 2
         won_amount = amount * multiplier
-        user_balances[user_id] += won_amount
+        update_balance(user_id, current_bal + won_amount)
         await msg.edit(content=f"🎯 Çark durdu: **{outcome.upper()}**! Tebrikler kazandın! +**{won_amount:,} 🪙**")
     else:
-        user_balances[user_id] -= amount
+        update_balance(user_id, current_bal - amount)
         await msg.edit(content=f"😢 Çark durdu: **{outcome.upper()}** geldi. Kaybettin kanka! -**{amount:,} 🪙**")
-    
-    save_data()
 
 # --- KASA AÇMA SİSTEMİ ---
 @bot.command(name="kasa", aliases=["lootbox"])
 async def open_box(ctx, box_type: str = None):
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     
     if not box_type or box_type.lower() not in ["normal", "lüks", "luks", "mega"]:
         return await ctx.send("Hangi kasayı açmak istiyorsun kanka? Seçenekler:\n• `kasa normal` (10.000 🪙)\n• `kasa lüks` (50.000 🪙)\n• `kasa mega` (100.000 🪙)")
@@ -202,10 +158,11 @@ async def open_box(ctx, box_type: str = None):
     else:
         price = 100000
         
-    if get_balance(user_id) < price:
+    current_bal = get_balance(user_id)
+    if current_bal < price:
         return await ctx.send(f"Yetersiz bakiye kanka! Bu kasayı açmak için **{price:,} 🪙** gerekiyor.")
         
-    user_balances[user_id] -= price
+    update_balance(user_id, current_bal - price)
     
     msg = await ctx.send("📦 Kasa açılıyor, içerisi taranıyor...")
     await asyncio.sleep(1.5)
@@ -226,8 +183,7 @@ async def open_box(ctx, box_type: str = None):
             weights=[60, 30, 10], k=1
         )[0]
         
-    user_balances[user_id] += reward
-    save_data()
+    update_balance(user_id, get_balance(user_id) + reward)
     await msg.edit(content=f"🎉 Açtığın **{box_type.upper()} Kasa**'dan **+{reward:,} 🪙** çıktı!")
 
 # --- MESAJ SİLME KOMUTU (!sil <sayı>) ---
@@ -252,42 +208,41 @@ async def clear_error(ctx, error):
 # --- BANKA: PARA YATIRMA (DEPOSIT) ---
 @bot.command(name="deposit")
 async def deposit(ctx, amount_str: str):
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     bal = get_balance(user_id)
     amount = bal if amount_str.lower() == "all" else int(amount_str) if amount_str.isdigit() else 0
     
     if amount <= 0 or bal < amount:
         return await ctx.send("Geçersiz miktar veya yetersiz cüzdan!")
         
-    user_balances[user_id] -= amount
-    user_banks[user_id] = get_bank(user_id) + amount
-    save_data()
+    update_balance(user_id, bal - amount)
+    update_bank(user_id, get_bank(user_id) + amount)
     await ctx.send(f"🏦 Cüzdanından **{amount:,} 🪙** bankaya yatırıldı.")
 
 # --- BANKA: PARA ÇEKME (WITHDRAW) ---
 @bot.command(name="withdraw")
 async def withdraw(ctx, amount_str: str):
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     bank = get_bank(user_id)
     amount = bank if amount_str.lower() == "all" else int(amount_str) if amount_str.isdigit() else 0
     
     if amount <= 0 or bank < amount:
         return await ctx.send("Geçersiz miktar veya yetersiz banka bakiyesi!")
         
-    user_banks[user_id] -= amount
-    user_balances[user_id] = get_balance(user_id) + amount
-    save_data()
+    update_bank(user_id, bank - amount)
+    update_balance(user_id, get_balance(user_id) + amount)
     await ctx.send(f"💸 Bankadan **{amount:,} 🪙** çekildi.")
 
 # --- SERVET SIRALAMASI (LB) ---
 @bot.command(name="lb")
 async def leaderboard(ctx):
-    all_users = set(list(user_balances.keys()) + list(user_banks.keys()))
-    if not all_users:
+    cursor.execute("SELECT user_id, balance, bank FROM economy")
+    rows = cursor.fetchall()
+    if not rows:
         return await ctx.send("Henüz sıralamada kimse yok!")
         
-    net_worths = {uid: get_balance(uid) + get_bank(uid) for uid in all_users}
-    sorted_users = sorted(net_worths.items(), key=lambda item: item[1], reverse=True)[:10]
+    net_worths = [(row[0], row[1] + row[2]) for row in rows]
+    sorted_users = sorted(net_worths, key=lambda item: item[1], reverse=True)[:10]
     
     embed = discord.Embed(title="🏆 HelperX - Servet Sıralaması", color=discord.Color.gold())
     desc = "".join([f"**{idx}.** <@!{uid}> — **{total:,}** 🪙\n" for idx, (uid, total) in enumerate(sorted_users, 1)])
@@ -306,15 +261,14 @@ async def buy(ctx, item: str = None):
     if not item or item.lower() != "vip":
         return await ctx.send("Mağazada sadece `buy vip` ürünü bulunuyor!")
         
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     bal = get_balance(user_id)
     price = 100000000
     
     if bal < price:
         return await ctx.send(f"Yetersiz bakiye! VIP için **{price:,} 🪙** gerekiyor.")
         
-    user_balances[user_id] -= price
-    save_data()
+    update_balance(user_id, bal - price)
     
     role = discord.utils.get(ctx.guild.roles, name="VIP")
     if role:
@@ -327,11 +281,14 @@ async def buy(ctx, item: str = None):
 @bot.command(name="profile")
 async def profile(ctx, member: discord.Member = None):
     target = member or ctx.author
-    user_id = target.id
+    user_id = str(target.id)
     bal = get_balance(user_id)
     bank = get_bank(user_id)
     total = bal + bank
-    streak = daily_streaks.get(user_id, 0)
+    
+    cursor.execute("SELECT streak FROM economy WHERE user_id = ?", (user_id,))
+    res = cursor.fetchone()
+    streak = res[0] if res else 0
     
     embed = discord.Embed(title=f"👤 {target.name} - Profil Kartı", color=discord.Color.from_rgb(0, 162, 232))
     embed.set_thumbnail(url=target.display_avatar.url)
@@ -345,22 +302,21 @@ async def profile(ctx, member: discord.Member = None):
 @bot.command(name="add")
 @commands.has_permissions(administrator=True)
 async def add_money(ctx, amount: int):
-    user_balances[ctx.author.id] = get_balance(ctx.author.id) + amount
-    save_data()
+    user_id = str(ctx.author.id)
+    update_balance(user_id, get_balance(user_id) + amount)
     await ctx.send(f"👑 Cüzdanına **{amount:,}** eklendi!")
 
 @bot.command(name="hparasil")
 @commands.has_permissions(administrator=True)
 async def hparasil(ctx, member: discord.Member, amount: int):
-    user_id = member.id
+    user_id = str(member.id)
     current_bal = get_balance(user_id)
     
     if amount <= 0:
         return await ctx.send("Silinecek miktar 0'dan büyük olmalı kanka!")
         
     new_bal = max(0, current_bal - amount)
-    user_balances[user_id] = new_bal
-    save_data()
+    update_balance(user_id, new_bal)
     
     await ctx.send(f"⚠️ **{member.name}** adlı kişinin cüzdanından **{amount:,} 🪙** silindi! Güncel cüzdan: **{new_bal:,} 🪙**")
 
@@ -373,8 +329,8 @@ async def hparasil_error(ctx, error):
 
 @bot.command(name="hpay")
 async def hpay(ctx, member: discord.Member, amount: int):
-    sender_id = ctx.author.id
-    receiver_id = member.id
+    sender_id = str(ctx.author.id)
+    receiver_id = str(member.id)
     
     if sender_id == receiver_id:
         await ctx.send("Kendine para gönderemezsin kanka!")
@@ -393,9 +349,8 @@ async def hpay(ctx, member: discord.Member, amount: int):
         await ctx.send("Cüzdanında transfer için yeterli para yok!")
         return
 
-    user_balances[sender_id] = sender_wallet - amount
-    user_balances[receiver_id] = get_balance(receiver_id) + amount
-    save_data()
+    update_balance(sender_id, sender_wallet - amount)
+    update_balance(receiver_id, get_balance(receiver_id) + amount)
     
     await ctx.send(f"💸 **{member.name}** kişisine **{amount:,} 🪙** gönderildi!")
 
@@ -405,23 +360,22 @@ async def hpay(ctx, member: discord.Member, amount: int):
 
 @bot.command(name="hf")
 async def coinflip(ctx, amount_str: str):
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     amount = get_bet_amount(user_id, amount_str)
     if not amount or amount <= 0:
         return await ctx.send("Geçersiz miktar kanka! Örnek: `hf 1000`")
-    if get_balance(user_id) < amount:
+    current_bal = get_balance(user_id)
+    if current_bal < amount:
         return await ctx.send("Yetersiz bakiye kanka!")
 
     win_chance = random.choices([True, False], weights=[50, 50], k=1)[0]
 
     if win_chance:
-        user_balances[user_id] += amount
+        update_balance(user_id, current_bal + amount)
         await ctx.send(f"🪙 **{ctx.author.name}** kazandı! +**{amount * 2:,} 🪙**")
     else:
-        user_balances[user_id] -= amount
+        update_balance(user_id, current_bal - amount)
         await ctx.send(f"🪙 **{ctx.author.name}** kaybetti! -**{amount:,} 🪙** :c")
-    
-    save_data()
 
 # ==========================================
 # --- SLOTS (HS / WS) - %50 KAZANMA ORANI ---
@@ -429,11 +383,12 @@ async def coinflip(ctx, amount_str: str):
 
 @bot.command(name="hs", aliases=["ws"])
 async def slots(ctx, amount_str: str):
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     amount = get_bet_amount(user_id, amount_str)
     if not amount or amount <= 0:
         return await ctx.send("Geçersiz miktar kanka! Örnek: `hs 1000` veya `ws all`")
-    if get_balance(user_id) < amount:
+    current_bal = get_balance(user_id)
+    if current_bal < amount:
         return await ctx.send("Yetersiz bakiye kanka!")
 
     username = ctx.author.name
@@ -473,20 +428,18 @@ async def slots(ctx, amount_str: str):
 
     if s1 == s2 == s3:
         won = amount * 5
-        user_balances[user_id] += won
+        update_balance(user_id, current_bal + won)
         result_text = f"👑 Jackpot! Üçlü eşleşme (+{won:,} 🪙)"
         embed_color = discord.Color.gold()
     elif s1 == s2 or s2 == s3:
         won = amount * 2
-        user_balances[user_id] += won
+        update_balance(user_id, current_bal + won)
         result_text = f"✨ Kazandın! İkili eşleşme (+{won:,} 🪙)"
         embed_color = discord.Color.green()
     else:
-        user_balances[user_id] -= amount
+        update_balance(user_id, current_bal - amount)
         result_text = f"😢 Kaybettin, sağlık olsun! (-{amount:,} 🪙)"
         embed_color = discord.Color.red()
-
-    save_data()
 
     final_embed = discord.Embed(
         description=f"**SLOTS**\n"
@@ -509,7 +462,7 @@ class BlackjackView(discord.ui.View):
         self.amount = amount
         
         self.cards = [("🂡", 11), ("🂢", 2), ("🂣", 3), ("🂤", 4), ("🂥", 5), ("🂦", 6), ("🂧", 7), ("🂨", 8), ("🂩", 9), ("🂪", 10), ("🂫", 10), ("🂭", 10), ("🂮", 10),
-                      ("🃁", 11), ("🃂", 2), ("🃃", 3), ("🃄", 4), ("🃅", 5), ("🃆", 6), ("🃇", 7), ("🃈", 8), ("🃉", 9), ("🃊", 10), ("🃋", 10), ("🃍", 10), ("🃎", 10)]
+                     ("🃁", 11), ("🃂", 2), ("🃃", 3), ("🃄", 4), ("🃅", 5), ("🃆", 6), ("🃇", 7), ("🃈", 8), ("🃉", 9), ("🃊", 10), ("🃋", 10), ("🃍", 10), ("🃎", 10)]
         
         win_bias = random.choices([True, False], weights=[50, 50], k=1)[0]
         if win_bias:
@@ -547,15 +500,15 @@ class BlackjackView(discord.ui.View):
 
     @discord.ui.button(emoji="👊", style=discord.ButtonStyle.blurple)
     async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
+        if interaction.user.id != int(self.user_id):
             return await interaction.response.send_message("Bu oyun senin değil kanka!", ephemeral=True)
         
         self.player_hand.append(random.choice(self.cards))
         p_score = self.get_score(self.player_hand)
         
         if p_score > 21:
-            user_balances[self.user_id] -= self.amount
-            save_data()
+            current_bal = get_balance(self.user_id)
+            update_balance(self.user_id, current_bal - self.amount)
             text = f"🎲 ~ **You lost {self.amount:,} cowoncy!**"
             for child in self.children:
                 child.disabled = True
@@ -566,7 +519,7 @@ class BlackjackView(discord.ui.View):
 
     @discord.ui.button(emoji="🛑", style=discord.ButtonStyle.danger)
     async def stand(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
+        if interaction.user.id != int(self.user_id):
             return await interaction.response.send_message("Bu oyun senin değil kanka!", ephemeral=True)
         
         p_score = self.get_score(self.player_hand)
@@ -576,19 +529,18 @@ class BlackjackView(discord.ui.View):
             self.dealer_hand.append(random.choice(self.cards))
             d_score = self.get_score(self.dealer_hand)
             
+        current_bal = get_balance(self.user_id)
         if d_score > 21 or p_score > d_score:
-            user_balances[self.user_id] += self.amount
+            update_balance(self.user_id, current_bal + self.amount)
             text = f"🎉 **Masayı yendin ve kazandın! +{self.amount * 2:,} 🪙**"
             embed_color = discord.Color.green()
         elif p_score == d_score:
             text = f"🤝 **Berabere! Paran iade edildi.**"
             embed_color = discord.Color.gold()
         else:
-            user_balances[self.user_id] -= self.amount
+            update_balance(self.user_id, current_bal - self.amount)
             text = f"🎲 ~ **You lost {self.amount:,} cowoncy!**"
             embed_color = discord.Color.dark_red()
-            
-        save_data()
         
         for child in self.children:
             child.disabled = True
@@ -598,7 +550,7 @@ class BlackjackView(discord.ui.View):
 
 @bot.command(name="hj")
 async def hj_game(ctx, amount_str: str):
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     amount = get_bet_amount(user_id, amount_str)
     if not amount or amount <= 0:
         return await ctx.send("Geçersiz miktar kanka! Örnek: `hj 1000`")
@@ -633,9 +585,12 @@ async def hbilgi(ctx):
     embed.add_field(name="🛠️ Yönetici Komutları", value="`!add` - Para eklersin\n`!hparasil` - Para silersin\n`!sil` - Mesaj temizlersin", inline=False)
     embed.set_footer(text="HelperX ile iyi eğlenceler dileriz!")
     await ctx.send(embed=embed)
-    @bot.command()
+
+# --- TEST KOMUTU ---
+@bot.command()
 async def hdeneme(ctx):
-    user_id = ctx.author.id
+    user_id = str(ctx.author.id)
     para = get_balance(user_id)
     await ctx.send(f"Deneme başarılı kanka! Cüzdanındaki güncel para: **{para:,}** coin.")
+
 bot.run(os.getenv("DISCORD_TOKEN", "TOKEN_BURAYA"))
