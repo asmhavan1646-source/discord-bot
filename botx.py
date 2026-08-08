@@ -613,4 +613,4 @@ async def balance(ctx):
     bal = get_balance(ctx.author.id)
     await ctx.send(f"🪙 **{ctx.author.name}**, cüzdanında **{bal:,}** var.")
 
-bot.run("MTUzNTIxNDAzMjEzNzc1NjcwMg.Gu_ak1.dXptWGXUHPoqtY1h0DaObgV1sXrdzlLjOpBUzQ")
+bot.run("MTUzNTIxNDAzMjEzNzc1NjcwMg.GKpm_7.5tPIz6kglnkGkyJF2mGGAPugeKwv9hF5LrIvpc")
