@@ -19,7 +19,6 @@ ALLOWED_CHANNEL_ID = 1535569350403297381  # Botun çalışacağı kanalın ID'si
 @bot.check
 async def globally_block_channels(ctx):
     if ctx.channel.id != ALLOWED_CHANNEL_ID:
-        # İstersen uyarı mesajını açabilirsin, şimdilik sessizce görmezden geliyor
         return False
     return True
 
@@ -48,7 +47,6 @@ def save_data():
 user_balances, user_banks, daily_streaks = load_data()
 daily_cooldowns = {}
 crime_cooldowns = {}
-hpay_cooldowns = {}
 
 def get_balance(user_id):
     if user_id not in user_balances:
@@ -361,16 +359,17 @@ async def hpay(ctx, member: discord.Member, amount: int):
     receiver_id = member.id
     
     if sender_id == receiver_id:
-        await ctx.send("Kendine humoral gönderemezsin kanka!")
+        await ctx.send("Kendine para gönderemezsin kanka!")
         return
 
     if amount <= 0:
         await ctx.send("Gönderilecek miktar 0'dan büyük olmalı!")
         return
 
-    if amount > 1000000:
+    if amount > 10000000:
         await ctx.send("Tek seferde en fazla **10000000 🪙** gönderebilirsin!")
         return
+        
     sender_wallet = get_balance(sender_id)
     if sender_wallet < amount:
         await ctx.send("Cüzdanında transfer için yeterli para yok!")
@@ -572,7 +571,7 @@ class BlackjackView(discord.ui.View):
             embed_color = discord.Color.dark_red()
             
         save_data()
-            
+        
         for child in self.children:
             child.disabled = True
             
@@ -596,5 +595,11 @@ async def hj_game(ctx, amount_str: str):
 async def balance(ctx):
     bal = get_balance(ctx.author.id)
     await ctx.send(f"🪙 **{ctx.author.name}**, cüzdanında **{bal:,}** var.")
+
+# --- HATA YÖNETİMİ (KIRMIZI LOGLARI TEMİZLEME) ---
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return
 
 bot.run(os.getenv("DISCORD_TOKEN"))
