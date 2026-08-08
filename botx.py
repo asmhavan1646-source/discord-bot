@@ -20,14 +20,15 @@ async def globally_block_channels(ctx):
         return False
     return True
 
-# --- SQLITE VERİTABANI SİSTEMİ (Paralar asla silinmez!) ---
-db = sqlite3.connect("economy.db")
+# --- KALICI DİSK VERİTABANI SİSTEMİ (Paralar asla silinmez!) ---
+db_path = "/var/data/economy.db" if os.path.exists("/var/data") else "economy.db"
+db = sqlite3.connect(db_path)
 cursor = db.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS economy (
     user_id TEXT PRIMARY KEY,
-    balance INTEGER DEFAULT 160000,
+    balance INTEGER DEFAULT 0,
     bank INTEGER DEFAULT 0,
     streak INTEGER DEFAULT 0
 )
@@ -40,9 +41,9 @@ def get_balance(user_id):
     result = cursor.fetchone()
     
     if result is None:
-        cursor.execute("INSERT OR REPLACE INTO economy (user_id, balance, bank, streak) VALUES (?, 160000, 0, 0)", (user_id,))
+        cursor.execute("INSERT OR REPLACE INTO economy (user_id, balance, bank, streak) VALUES (?, 0, 0, 0)", (user_id,))
         db.commit()
-        return 160000
+        return 0
     return result[0]
 
 def get_bank(user_id):
@@ -51,7 +52,7 @@ def get_bank(user_id):
     result = cursor.fetchone()
     
     if result is None:
-        cursor.execute("INSERT OR REPLACE INTO economy (user_id, balance, bank, streak) VALUES (?, 160000, 0, 0)", (user_id,))
+        cursor.execute("INSERT OR REPLACE INTO economy (user_id, balance, bank, streak) VALUES (?, 0, 0, 0)", (user_id,))
         db.commit()
         return 0
     return result[0]
@@ -333,7 +334,7 @@ async def hpay(ctx, member: discord.Member, amount: int):
     receiver_id = str(member.id)
     
     if sender_id == receiver_id:
-        await ctx.send("Kendine senden para gönderemezsin kanka!")
+        await ctx.send("Kendine para gönderemezsin kanka!")
         return
 
     if amount <= 0:
