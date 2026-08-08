@@ -594,12 +594,12 @@ async def hdeneme(ctx):
     para = get_balance(user_id)
     await ctx.send(f"Deneme başarılı kanka! Cüzdanındaki güncel para: **{para:,}** coin.")
 
-# --- YENİ EKLENEN DENEME KOMUTU (hdenemekomutu2) ---
-@bot.command(name="hdenemekomutu2")
-async def hdenemekomutu2(ctx):
+# --- YENİ EKLENEN DENEME KOMUTU (hdenemekomutu3) ---
+@bot.command(name="hdenemekomutu3")
+async def hdenemekomutu3(ctx):
     user_id = str(ctx.author.id)
     bal = get_balance(user_id)
     bank = get_bank(user_id)
-    await ctx.send(f"🔍 **{ctx.author.name}**, veritabanı kontrolü başarılı!\n🪙 Cüzdan: **{bal:,}** coin\n🏦 Banka: **{bank:,}** coin")
+    await ctx.send(f"🔍 **{ctx.author.name}**, veritabanı kontrolü başarılı (Komut 3)!\n🪙 Cüzdan: **{bal:,}** coin\n🏦 Banka: **{bank:,}** coin")
 
 bot.run(os.getenv("DISCORD_TOKEN", "TOKEN_BURAYA"))
