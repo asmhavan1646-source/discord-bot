@@ -304,7 +304,7 @@ async def leaderboard(ctx):
 @bot.command(name="shop")
 async def shop(ctx):
     embed = discord.Embed(title="🛒 HelperX Mağaza", description="Paranı harcayarak özel rol alabilirsin!", color=discord.Color.blue())
-    embed.add_field(name="VIP Rolü", value="Fiyat: **10,000,00000 🪙**\nKomut: `buy vip`", inline=False)
+    embed.add_field(name="VIP Rolü", value="Fiyat: **100.000.000 🪙**\nKomut: `buy vip`", inline=False)
     await ctx.send(embed=embed)
 
 @bot.command(name="buy")
@@ -314,7 +314,7 @@ async def buy(ctx, item: str = None):
         
     user_id = ctx.author.id
     bal = get_balance(user_id)
-    price = 1000000000
+    price = 100.000.000
     
     if bal < price:
         return await ctx.send(f"Yetersiz bakiye! VIP için **{price:,} 🪙** gerekiyor.")
@@ -325,7 +325,7 @@ async def buy(ctx, item: str = None):
     role = discord.utils.get(ctx.guild.roles, name="VIP")
     if role:
         await ctx.author.add_roles(role)
-        await ctx.send(f"🎉 Tebrikler! **10,000,000 🪙** ödeyerek VIP rolünü aldın.")
+        await ctx.send(f"🎉 Tebrikler! **100.000.000 🪙** ödeyerek VIP rolünü aldın.")
     else:
         await ctx.send("Paran çekildi fakat sunucuda 'VIP' rolü bulunamadı!")
 
@@ -369,7 +369,7 @@ async def hpay(ctx, member: discord.Member, amount: int):
         return
 
     if amount > 1000000:
-        await ctx.send("Tek seferde en fazla **1.000.000 🪙** gönderebilirsin!")
+        await ctx.send("Tek seferde en fazla **10.000.000 🪙** gönderebilirsin!")
         return
 
     current_time = time.time()
