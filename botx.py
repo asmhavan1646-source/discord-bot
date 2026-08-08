@@ -54,7 +54,7 @@ crime_cooldowns = {}
 
 def get_balance(user_id):
     if user_id not in user_balances:
-        user_balances[user_id] = 50000
+        user_balances[user_id] = 160000
         save_data()
     return user_balances[user_id]
 
