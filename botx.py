@@ -47,9 +47,9 @@ def get_balance(user_id):
         return 160000
     return result[0]
     def get_bank(user_id):
-    user_id = str(user_id)
-    cursor.execute("SELECT bank FROM economy WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
+                user_id = str(user_id)
+                cursor.execute("SELECT bank FROM economy WHERE user_id = ?", (user_id,))
+                result = cursor.fetchone()
     
     if result is None:
         cursor.execute("INSERT OR REPLACE INTO economy (user_id, balance, bank, streak) VALUES (?, 160000, 0, 0)", (user_id,))
