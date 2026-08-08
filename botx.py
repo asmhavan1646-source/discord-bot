@@ -333,7 +333,7 @@ async def hpay(ctx, member: discord.Member, amount: int):
     receiver_id = str(member.id)
     
     if sender_id == receiver_id:
-        await ctx.send("Kendine para gönderemezsin kanka!")
+        await ctx.send("Kendine senden para gönderemezsin kanka!")
         return
 
     if amount <= 0:
@@ -592,5 +592,13 @@ async def hdeneme(ctx):
     user_id = str(ctx.author.id)
     para = get_balance(user_id)
     await ctx.send(f"Deneme başarılı kanka! Cüzdanındaki güncel para: **{para:,}** coin.")
+
+# --- YENİ EKLENEN DENEME KOMUTU (hdenemekomutu2) ---
+@bot.command(name="hdenemekomutu2")
+async def hdenemekomutu2(ctx):
+    user_id = str(ctx.author.id)
+    bal = get_balance(user_id)
+    bank = get_bank(user_id)
+    await ctx.send(f"🔍 **{ctx.author.name}**, veritabanı kontrolü başarılı!\n🪙 Cüzdan: **{bal:,}** coin\n🏦 Banka: **{bank:,}** coin")
 
 bot.run(os.getenv("DISCORD_TOKEN", "TOKEN_BURAYA"))
