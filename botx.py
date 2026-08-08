@@ -6,7 +6,6 @@ import random
 import time
 import discord
 from discord.ext import commands, tasks
-import os
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -22,17 +21,20 @@ async def globally_block_channels(ctx):
         return False
     return True
 
-# --- VERİLERİ DOSYADA SAKLAMA SİSTEMİ ---
+# --- VERİLERİ DİSKE KESİN KAYDEDEN SİSTEM ---
 DATA_FILE = "economy_data.json"
 
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            balances = {int(k): v for k, v in data.get("balances", {}).items()}
-            banks = {int(k): v for k, v in data.get("banks", {}).items()}
-            streaks = {int(k): v for k, v in data.get("streaks", {}).items()}
-            return balances, banks, streaks
+            try:
+                data = json.load(f)
+                balances = {int(k): v for k, v in data.get("balances", {}).items()}
+                banks = {int(k): v for k, v in data.get("banks", {}).items()}
+                streaks = {int(k): v for k, v in data.get("streaks", {}).items()}
+                return balances, banks, streaks
+            except:
+                return {}, {}, {}
     return {}, {}, {}
 
 def save_data():
@@ -43,6 +45,8 @@ def save_data():
     }
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+        f.flush()
+        os.fsync(f.fileno())
 
 user_balances, user_banks, daily_streaks = load_data()
 daily_cooldowns = {}
@@ -596,10 +600,10 @@ async def balance(ctx):
     bal = get_balance(ctx.author.id)
     await ctx.send(f"🪙 **{ctx.author.name}**, cüzdanında **{bal:,}** var.")
 
-# --- HATA YÖNETİMİ (KIRMIZI LOGLARI TEMİZLEME) ---
+# --- HATA YÖNETİMİ ---
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+bot.run(os.getenv("DISCORD_TOKEN", "TOKEN_BURAYA"))
