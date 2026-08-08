@@ -11,6 +11,9 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="", intents=intents, case_insensitive=True)
 
+# Sadece izin verilen kanal ID'si
+ALLOWED_CHANNEL_ID = 1535753835308392509
+
 # --- KALICI DİSK VERİTABANI SİSTEMİ (Paralar asla silinmez!) ---
 db_path = "/var/data/economy.db" if os.path.exists("/var/data") else "economy.db"
 db = sqlite3.connect(db_path)
@@ -67,6 +70,16 @@ def get_bet_amount(user_id, amount_str):
         return amount
     except:
         return None
+
+# --- OTOMATİK KANAL KONTROLÜ (Global Check) ---
+@bot.check
+async def globally_block_channels(ctx):
+    # Yönetici komutları (!add, !hparasil) her yerden çalışabilsin mi yoksa o kanala mı sıkıştıralım? 
+    # Genelde güvenlik için yöneticiler de dahil her komut o kanala sabitlenir:
+    if ctx.channel.id != ALLOWED_CHANNEL_ID:
+        # İstersen buraya uyarı mesajı ekleyebilirsin ama genelde sessizce yok saymak daha temiz olur.
+        return False
+    return True
 
 # --- OTOMATİK FAİZ DÖNGÜSÜ (Her 1 saate bir %10 faiz) ---
 @tasks.loop(hours=1)
@@ -131,10 +144,8 @@ async def rulet(ctx, choice: str, amount_str: str):
     if not is_valid_choice:
         return await ctx.send("Yanlış seçim kanka! Şunlardan birini yazmalısın:\n• `rulet kırmızı [miktar]`\n• `rulet siyah [miktar]`\n• `rulet tek/cift [miktar]`\n• `rulet [0-36 arası sayı] [miktar]`")
 
-    # --- ANİMASYON BAŞLANGICI ---
     msg = await ctx.send("🎡 Çark döndürülüyor... Top hızla dönüyor 🔄")
     
-    # Animasyon adımları (hızlı geçiş efekti için rastgele ara görseller)
     anim_steps = [
         "🎡 Top dönüyor: 🔴 **14 (Kırmızı)**",
         "🎡 Top dönüyor: ⬛ **22 (Siyah)**",
@@ -150,7 +161,6 @@ async def rulet(ctx, choice: str, amount_str: str):
     
     await asyncio.sleep(0.6)
 
-    # %5 Kazanma Şansı Ayarlaması
     win_check = random.choices([True, False], weights=[5, 95], k=1)[0]
     
     if win_check:
@@ -398,7 +408,7 @@ async def hpay(ctx, member: discord.Member, amount: int):
     receiver_id = str(member.id)
     
     if sender_id == receiver_id:
-        await ctx.send("Kendine para gönderemezsin kanka!")
+        await ctx.send("Kendine nar gönderemezsin kanka!")
         return
 
     if amount <= 0:
