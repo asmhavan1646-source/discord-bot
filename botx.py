@@ -314,7 +314,7 @@ async def buy(ctx, item: str = None):
         
     user_id = ctx.author.id
     bal = get_balance(user_id)
-    price = 10000000
+    price = 1000000000
     
     if bal < price:
         return await ctx.send(f"Yetersiz bakiye! VIP için **{price:,} 🪙** gerekiyor.")
