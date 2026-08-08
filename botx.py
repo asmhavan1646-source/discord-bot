@@ -105,7 +105,7 @@ async def daily(ctx):
     await ctx.send(f"🎁 **{ctx.author.name}**, günlük ödülün: **{reward:,} 🪙**. Bir sonraki ödülün **{(streak + 1) * 5000:,} 🪙** olacak!")
 
 # ==========================================
-# --- GERÇEK RULET SİSTEMİ (%5 Kazanma Oranı) ---
+# --- GERÇEK RULET SİSTEMİ (Animasyonlu) ---
 # ==========================================
 @bot.command(name="rulet")
 async def rulet(ctx, choice: str, amount_str: str):
@@ -117,11 +117,9 @@ async def rulet(ctx, choice: str, amount_str: str):
     if amount is None or amount <= 0 or current_bal < amount:
         return await ctx.send("Geçersiz miktar veya yetersiz bakiye kanka!")
 
-    # Avrupa ruleti sayıları (0 yeşil, diğerleri kırmızı/siyah)
     red_numbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
     black_numbers = [2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]
     
-    # Geçerli tahmin kontrolü
     is_valid_choice = False
     if choice in ["kırmızı", "siyah", "yeşil", "tek", "cift"]:
         is_valid_choice = True
@@ -133,14 +131,29 @@ async def rulet(ctx, choice: str, amount_str: str):
     if not is_valid_choice:
         return await ctx.send("Yanlış seçim kanka! Şunlardan birini yazmalısın:\n• `rulet kırmızı [miktar]`\n• `rulet siyah [miktar]`\n• `rulet tek/cift [miktar]`\n• `rulet [0-36 arası sayı] [miktar]`")
 
-    msg = await ctx.send("🎡 Rulet çarkı çevriliyor, top dönüyor...")
-    await asyncio.sleep(1.5)
+    # --- ANİMASYON BAŞLANGICI ---
+    msg = await ctx.send("🎡 Çark döndürülüyor... Top hızla dönüyor 🔄")
+    
+    # Animasyon adımları (hızlı geçiş efekti için rastgele ara görseller)
+    anim_steps = [
+        "🎡 Top dönüyor: 🔴 **14 (Kırmızı)**",
+        "🎡 Top dönüyor: ⬛ **22 (Siyah)**",
+        "🎡 Top dönüyor: 🟢 **0 (Yeşil)**",
+        "🎡 Top dönüyor: 🔴 **7 (Kırmızı)**",
+        "🎡 Top dönüyor: ⬛ **31 (Siyah)**",
+        "🎡 Yavaşlıyor... 🔄"
+    ]
+    
+    for step in anim_steps:
+        await asyncio.sleep(0.5)
+        await msg.edit(content=step)
+    
+    await asyncio.sleep(0.6)
 
     # %5 Kazanma Şansı Ayarlaması
     win_check = random.choices([True, False], weights=[5, 95], k=1)[0]
     
     if win_check:
-        # Oyuncunun kazanması istendiyse, tam onun tahminine uygun bir sonuç üretelim
         if choice == "kırmızı":
             landed_number = random.choice(red_numbers)
         elif choice == "siyah":
@@ -151,13 +164,11 @@ async def rulet(ctx, choice: str, amount_str: str):
             landed_number = random.choice([n for n in range(1, 37) if n % 2 != 0])
         elif choice == "cift":
             landed_number = random.choice([n for n in range(1, 37) if n % 2 == 0])
-        else: # Sayı seçtiyse direkt o sayı gelsin
+        else:
             landed_number = int(choice)
     else:
-        # %95 ihtimalle rastgele zar atılır (büyük ihtimalle kaybeder)
         landed_number = random.randint(0, 36)
 
-    # Rengi belirle
     if landed_number == 0:
         color_name = "🟢 YEŞİL (0)"
     elif landed_number in red_numbers:
@@ -165,7 +176,6 @@ async def rulet(ctx, choice: str, amount_str: str):
     else:
         color_name = f"⬛ SİYAH ({landed_number})"
 
-    # Kazanç hesaplama
     won = 0
     won_flag = False
 
@@ -190,10 +200,10 @@ async def rulet(ctx, choice: str, amount_str: str):
 
     if won_flag:
         update_balance(user_id, current_bal + won)
-        await msg.edit(content=f"🎯 Top **{color_name}** üzerinde durdu! Tebrikler kazandın! +**{won:,} 🪙**")
+        await msg.edit(content=f"🎯 Çark durdu! Top **{color_name}** üzerinde durdu! Tebrikler kazandın! +**{won:,} 🪙**")
     else:
         update_balance(user_id, current_bal - amount)
-        await msg.edit(content=f"😢 Top **{color_name}** üzerinde durdu. Kaybettin kanka! -**{amount:,} 🪙**")
+        await msg.edit(content=f"😢 Çark durdu! Top **{color_name}** üzerinde durdu. Kaybettin kanka! -**{amount:,} 🪙**")
 
 # --- KASA AÇMA SİSTEMİ ---
 @bot.command(name="kasa", aliases=["lootbox"])
@@ -633,7 +643,7 @@ async def hbilgi(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="💰 Ekonomi Komutları", value="`!h` - Cüzdanını görürsün\n`!daily` - Günlük ödülünü alırsın\n`!hpay` - Başkasına para gönderirsin\n`!lb` - Servet sıralamasına bakarsın", inline=False)
-    embed.add_field(name="🎲 Kumar & Şans Oyunları", value="`!hf` - Coinflip (Yazı/Tura)\n`!hs` (veya `!ws`) - Slots\n`!hj` - Blackjack\n`!rulet` - Gerçek Rulet\n`!kasa` - Kasa açma", inline=False)
+    embed.add_field(name="🎲 Kumar & Şans Oyunları", value="`!hf` - Coinflip (Yazı/Tura)\n`!hs` (veya `!ws`) - Slots\n`!hj` - Blackjack\n`!rulet` - Gerçek Rulet (Animasyonlu)\n`!kasa` - Kasa açma", inline=False)
     embed.add_field(name="🛠️ Yönetici Komutları", value="`!add` - Para eklersin\n`!hparasil` - Para silersin\n`!sil` - Mesaj temizlersin", inline=False)
     embed.set_footer(text="HelperX ile iyi eğlenceler dileriz!")
     await ctx.send(embed=embed)
