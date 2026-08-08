@@ -633,5 +633,9 @@ async def hbilgi(ctx):
     embed.add_field(name="🛠️ Yönetici Komutları", value="`!add` - Para eklersin\n`!hparasil` - Para silersin\n`!sil` - Mesaj temizlersin", inline=False)
     embed.set_footer(text="HelperX ile iyi eğlenceler dileriz!")
     await ctx.send(embed=embed)
-    
+    @bot.command()
+async def hdeneme(ctx):
+    user_id = ctx.author.id
+    para = get_balance(user_id)
+    await ctx.send(f"Deneme başarılı kanka! Cüzdanındaki güncel para: **{para:,}** coin.")
 bot.run(os.getenv("DISCORD_TOKEN", "TOKEN_BURAYA"))
