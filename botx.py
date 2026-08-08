@@ -304,7 +304,7 @@ async def leaderboard(ctx):
 @bot.command(name="shop")
 async def shop(ctx):
     embed = discord.Embed(title="🛒 HelperX Mağaza", description="Paranı harcayarak özel rol alabilirsin!", color=discord.Color.blue())
-    embed.add_field(name="VIP Rolü", value="Fiyat: **10,000,000 🪙**\nKomut: `buy vip`", inline=False)
+    embed.add_field(name="VIP Rolü", value="Fiyat: **10,000,00000 🪙**\nKomut: `buy vip`", inline=False)
     await ctx.send(embed=embed)
 
 @bot.command(name="buy")
