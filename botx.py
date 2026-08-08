@@ -357,6 +357,28 @@ async def add_money(ctx, amount: int):
     save_data()
     await ctx.send(f"👑 Cüzdanına **{amount:,}** eklendi!")
 
+@bot.command(name="hparasil")
+@commands.has_permissions(administrator=True)
+async def hparasil(ctx, member: discord.Member, amount: int):
+    user_id = member.id
+    current_bal = get_balance(user_id)
+    
+    if amount <= 0:
+        return await ctx.send("Silinecek miktar 0'dan büyük olmalı kanka!")
+        
+    new_bal = max(0, current_bal - amount)
+    user_balances[user_id] = new_bal
+    save_data()
+    
+    await ctx.send(f"⚠️ **{member.name}** adlı kişinin cüzdanından **{amount:,} 🪙** silindi! Güncel cüzdan: **{new_bal:,} 🪙**")
+
+@hparasil.error
+async def hparasil_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("Eyvah kanka! Bu komutu kullanmak için **Yönetici** yetkin olmalı!")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("Eksik tuşladın kanka! Örnek kullanım: `hparasil @Kullanici 5000`")
+
 @bot.command(name="hpay")
 async def hpay(ctx, member: discord.Member, amount: int):
     sender_id = ctx.author.id
