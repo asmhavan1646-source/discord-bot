@@ -628,4 +628,18 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return
 
+# --- BİLGİ KOMUTU (!hbilgi) ---
+@bot.command(name="hbilgi")
+async def hbilgi(ctx):
+    embed = discord.Embed(
+        title="🤖 HelperX Ekonomi & Eğlence Botu",
+        description="Sunucumuzun resmi ekonomi botudur. Paranı katlayabilir, oyunlar oynayabilir ve sıralamada yükselebilirsin kanka!",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="💰 Ekonomi Komutları", value="`!h` - Cüzdanını görürsün\n`!daily` - Günlük ödülünü alırsın\n`!hpay` - Başkasına para gönderirsin\n`!lb` - Servet sıralamasına bakarsın", inline=False)
+    embed.add_field(name="🎲 Kumar & Şans Oyunları", value="`!hf` - Coinflip (Yazı/Tura)\n`!hs` (veya `!ws`) - Slots\n`!hj` - Blackjack\n`!cark` - Şans çarkı\n`!kasa` - Kasa açma", inline=False)
+    embed.add_field(name="🛠️ Yönetici Komutları", value="`!add` - Para eklersin\n`!hparasil` - Para silersin\n`!sil` - Mesaj temizlersin", inline=False)
+    embed.set_footer(text="HelperX ile iyi eğlenceler dileriz!")
+    await ctx.send(embed=embed)
+    
 bot.run(os.getenv("DISCORD_TOKEN", "TOKEN_BURAYA"))
