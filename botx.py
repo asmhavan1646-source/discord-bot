@@ -434,18 +434,30 @@ async def withdraw(ctx, amount_str: str):
     update_balance(user_id, get_balance(user_id) + amount)
     await ctx.send(f"💸 Bankadan **{amount:,} 🪙** çekildi.")
 
-# --- SERVET SIRALAMASI (LB) ---
+# --- SERVET SIRALAMASI (LB) - SADECE SUNUCUYA ÖZEL ---
 @bot.command(name="lb")
 async def leaderboard(ctx):
-    cursor.execute("SELECT user_id, balance, bank FROM economy")
+    if ctx.guild is None:
+        return await ctx.send("Bu komut sadece sunucularda kullanılabilir kanka!")
+        
+    guild_member_ids = [str(member.id) for member in ctx.guild.members]
+    
+    if not guild_member_ids:
+        return await ctx.send("Sunucuda üye bulunamadı!")
+        
+    placeholders = ','.join(['?'] * len(guild_member_ids))
+    query = f"SELECT user_id, balance, bank FROM economy WHERE user_id IN ({placeholders})"
+    
+    cursor.execute(query, guild_member_ids)
     rows = cursor.fetchall()
+    
     if not rows:
-        return await ctx.send("Henüz sıralamada kimse yok!")
+        return await ctx.send("Bu sunucuda henüz sıralamada kimse yok kanka!")
         
     net_worths = [(row[0], row[1] + row[2]) for row in rows]
     sorted_users = sorted(net_worths, key=lambda item: item[1], reverse=True)[:10]
     
-    embed = discord.Embed(title="🏆 HelperX - Servet Sıralaması", color=discord.Color.gold())
+    embed = discord.Embed(title=f"🏆 {ctx.guild.name} - Servet Sıralaması", color=discord.Color.gold())
     desc = "".join([f"**{idx}.** <@!{uid}> — **{total:,}** 🪙\n" for idx, (uid, total) in enumerate(sorted_users, 1)])
     embed.description = desc
     await ctx.send(embed=embed)
@@ -513,9 +525,6 @@ async def hparasil(ctx, member: discord.Member, amount: int):
     user_id = str(member.id)
     current_bal = get_balance(user_id)
     
-    if amount <= 0:
-        return await ctx.send("Silinecek miktar 0'dan büyük olmalı kanka!")
-        
     new_bal = max(0, current_bal - amount)
     update_balance(user_id, new_bal)
     
@@ -539,10 +548,6 @@ async def hpay(ctx, member: discord.Member, amount: int):
 
     if amount <= 0:
         await ctx.send("Gönderilecek miktar 0'dan büyük olmalı!")
-        return
-
-    if amount > 10000000:
-        await ctx.send("Tek seferde en fazla **10000000 🪙** gönderebilirsin!")
         return
         
     sender_wallet = get_balance(sender_id)
