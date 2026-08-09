@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 intents = discord.Intents.default()
 intents.message_content = True
 intents.dm_messages = True # DM mesajlarını okuyabilmek için aktif edildi
+intents.members = True # Sunucudaki üyeleri eksiksiz okuyabilmek için aktif edildi
 
 bot = commands.Bot(command_prefix="", intents=intents, case_insensitive=True)
 
