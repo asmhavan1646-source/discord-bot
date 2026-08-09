@@ -12,11 +12,11 @@ intents.dm_messages = True # DM mesajlarını okuyabilmek için aktif edildi
 
 bot = commands.Bot(command_prefix="", intents=intents, case_insensitive=True)
 
-# Sadece izin verilen kanal ID'si
-ALLOWED_CHANNEL_ID = 1535753835308392509
-
 # Senin Discord Kullanıcı ID'n (DM Modmail için)
 SAHIP_ID = 1288632959674617912
+
+# --- EKONOMİ DENGE AYARI (Tek seferde oynanabilecek maksimum para 100.000) ---
+MAX_BET = 100000 
 
 # --- KALICI DİSK VERİTABANI SİSTEMİ (Paralar asla silinmez!) ---
 db_path = "/var/data/economy.db" if os.path.exists("/var/data") else "economy.db"
@@ -29,14 +29,29 @@ CREATE TABLE IF NOT EXISTS economy (
     balance INTEGER DEFAULT 0,
     bank INTEGER DEFAULT 0,
     streak INTEGER DEFAULT 0,
-    game_count INTEGER DEFAULT 0
+    game_count INTEGER DEFAULT 0,
+    last_daily TEXT
 )
 """)
 db.commit()
 
-# Eski tablolarda game_count sütunu yoksa hata vermemesi için ekleyelim:
+# Yasaklı kanallar için tablo oluşturuyoruz
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS blocked_channels (
+    channel_id TEXT PRIMARY KEY
+)
+""")
+db.commit()
+
+# Eski tablolarda eksik sütunlar yoksa hata vermemesi için ekleyelim:
 try:
     cursor.execute("ALTER TABLE economy ADD COLUMN game_count INTEGER DEFAULT 0")
+    db.commit()
+except:
+    pass
+
+try:
+    cursor.execute("ALTER TABLE economy ADD COLUMN last_daily TEXT")
     db.commit()
 except:
     pass
@@ -73,41 +88,52 @@ def update_bank(user_id, amount):
     cursor.execute("UPDATE economy SET bank = ? WHERE user_id = ?", (amount, user_id))
     db.commit()
 
-def check_and_update_pity(user_id):
-    """Her 20 oyunda 1 kez kesin kazanma (20'de 1) mantığı"""
-    user_id = str(user_id)
-    cursor.execute("SELECT game_count FROM economy WHERE user_id = ?", (user_id,))
-    res = cursor.fetchone()
-    count = (res[0] if res else 0) + 1
-    
-    if count >= 20:
-        cursor.execute("UPDATE economy SET game_count = 0 WHERE user_id = ?", (user_id,))
-        db.commit()
-        return True # 20. oyun, kesin kazandır!
-    else:
-        cursor.execute("UPDATE economy SET game_count = ? WHERE user_id = ?", (count, user_id))
-        db.commit()
-        return False
-
 def get_bet_amount(user_id, amount_str):
     balance = get_balance(user_id)
     if amount_str.lower() == "all":
-        return balance
+        return min(balance, MAX_BET)
     try:
         amount = int(amount_str)
+        if amount > MAX_BET:
+            return -1 
         return amount
     except:
         return None
 
-# --- OTOMATİK KANAL KONTROLÜ (Global Check) ---
+# --- OTOMATİK KANAL KONTROLÜ (Global Check - Yasaklı Kanal Sistemi) ---
 @bot.check
 async def globally_block_channels(ctx):
-    # Eğer mesaj DM'den (özel mesajdan) atıldıysa kanal kontrolüne takılmasın, direkt geçsin!
     if ctx.guild is None:
         return True
-    if ctx.channel.id != ALLOWED_CHANNEL_ID:
+    
+    channel_id = str(ctx.channel.id)
+    cursor.execute("SELECT channel_id FROM blocked_channels WHERE channel_id = ?", (channel_id,))
+    res = cursor.fetchone()
+    
+    if res:
         return False
     return True
+
+# --- YENİ EKLENEN KOMUT: !hyasakla ---
+@bot.command(name="hyasakla")
+@commands.has_permissions(administrator=True)
+async def hyasakla(ctx):
+    channel_id = str(ctx.channel.id)
+    
+    cursor.execute("SELECT channel_id FROM blocked_channels WHERE channel_id = ?", (channel_id,))
+    res = cursor.fetchone()
+    
+    if res:
+        return await ctx.send("⚠️ Bu kanal zaten yasaklı listesinde kanka!")
+        
+    cursor.execute("INSERT INTO blocked_channels (channel_id) VALUES (?)", (channel_id,))
+    db.commit()
+    await ctx.send(f"🛑 Başarıyla bu kanal (`{ctx.channel.name}`) bot komutlarına kapatıldı! Artık burada komut çalıştırılamaz.")
+
+@hyasakla.error
+async def hyasakla_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("Eyvah kanka! Bu komutu kullanmak için **Yönetici** yetkin olmalı!")
 
 # --- OTOMATİK FAİZ DÖNGÜSÜ (Her 1 saate bir %10 faiz) ---
 @tasks.loop(hours=1)
@@ -129,20 +155,17 @@ async def on_ready():
 # --- DM MODMAIL SİSTEMİ (Çift Yönlü Köprü) ---
 @bot.event
 async def on_message(message):
-    # 1. Botun kendi attığı mesajları yoksay
     if message.author == bot.user:
         return
 
-    # 2. KULLANICI BOTA DM ATTIĞINDA (Sana yönlendirme)
     if message.guild is None and message.author.id != SAHIP_ID:
         try:
             sahip = await bot.fetch_user(SAHIP_ID)
             await sahip.send(f"📩 **Yeni DM Mesajı!**\nKimden: {message.author} (ID: `{message.author.id}`)\nMesaj: {message.content}")
         except Exception as e:
-            print(f"Modmail hatası (Kullanıcıdan sana): {e}")
+            print(f"Modmail hatası: {e}")
         return
 
-    # 3. SEN BOTA DM'DEN CEVAP ATTIĞINDA (Kullanıcıya iletme)
     if message.guild is None and message.author.id == SAHIP_ID:
         parcalar = message.content.split(" ", 1)
         if len(parcalar) < 2:
@@ -165,27 +188,48 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# --- GÜNLÜK ÖDÜL ---
+# --- GÜNLÜK ÖDÜL (24 Saatte Bir) ---
 @bot.command(name="daily")
 async def daily(ctx):
     user_id = str(ctx.author.id)
-    cursor.execute("SELECT streak FROM economy WHERE user_id = ?", (user_id,))
+    
+    cursor.execute("SELECT streak, last_daily FROM economy WHERE user_id = ?", (user_id,))
     res = cursor.fetchone()
+    
     streak = res[0] if res else 0
+    last_daily_str = res[1] if res else None
+    
+    now = datetime.datetime.now()
+    
+    if last_daily_str:
+        last_daily = datetime.datetime.fromisoformat(last_daily_str)
+        gecen_sure = now - last_daily
+        
+        if gecen_sure.total_seconds() < 86400:
+            kalan_saniye = 86400 - int(gecen_sure.total_seconds())
+            saat = kalan_saniye // 3600
+            dakika = (kalan_saniye % 3600) // 60
+            return await ctx.send(f"⏳ Günlük ödülünü zaten almışsın kanka! Tekrar alabilmek için **{saat} saat {dakika} dakika** beklemelisin.")
+        
+        if gecen_sure.total_seconds() > 172800:
+            streak = 0
+
     if streak == 0:
         streak = 1
+    else:
+        streak += 1
 
     reward = streak * 5000
     current_bal = get_balance(user_id)
     update_balance(user_id, current_bal + reward)
     
-    cursor.execute("UPDATE economy SET streak = ? WHERE user_id = ?", (streak + 1, user_id))
+    cursor.execute("UPDATE economy SET streak = ?, last_daily = ? WHERE user_id = ?", (streak, now.isoformat(), user_id))
     db.commit()
     
-    await ctx.send(f"🎁 **{ctx.author.name}**, günlük ödülün: **{reward:,} 🪙**. Bir sonraki ödülün **{(streak + 1) * 5000:,} 🪙** olacak!")
+    await ctx.send(f"🎁 **{ctx.author.name}**, günlük ödülün: **{reward:,} 🪙**. Günlük serin: **{streak} gün**! Bir sonraki ödülün **{(streak + 1) * 5000:,} 🪙** olacak.")
 
 # ==========================================
-# --- GERÇEK RULET SİSTEMİ (Animasyonlu) ---
+# --- GERÇEK RULET SİSTEMİ (%5 Oran & 2x Çarpan) ---
 # ==========================================
 @bot.command(name="rulet")
 @commands.cooldown(1, 10, commands.BucketType.user)
@@ -194,6 +238,9 @@ async def rulet(ctx, choice: str, amount_str: str):
     choice = choice.lower()
     
     amount = get_bet_amount(user_id, amount_str)
+    if amount == -1:
+        return await ctx.send(f"⚠️ Tek seferde en fazla **{MAX_BET:,} 🪙** bahis oynayabilirsin kanka!")
+    
     current_bal = get_balance(user_id)
     if amount is None or amount <= 0 or current_bal < amount:
         return await ctx.send("Geçersiz miktar veya yetersiz bakiye kanka!")
@@ -229,9 +276,9 @@ async def rulet(ctx, choice: str, amount_str: str):
     
     await asyncio.sleep(0.6)
 
-    forced_win = check_and_update_pity(user_id)
+    win_chance = random.choices([True, False], weights=[5, 95], k=1)[0]
     
-    if forced_win:
+    if win_chance:
         if choice == "kırmızı":
             landed_number = random.choice(red_numbers)
         elif choice == "siyah":
@@ -242,10 +289,27 @@ async def rulet(ctx, choice: str, amount_str: str):
             landed_number = random.choice([n for n in range(1, 37) if n % 2 != 0])
         elif choice == "cift":
             landed_number = random.choice([n for n in range(1, 37) if n % 2 == 0])
-        else:
+        elif choice.isdigit():
             landed_number = int(choice)
+        else:
+            landed_number = random.randint(0, 36)
     else:
-        landed_number = random.randint(0, 36)
+        if choice == "kırmızı":
+            landed_number = random.choice(black_numbers + [0])
+        elif choice == "siyah":
+            landed_number = random.choice(red_numbers + [0])
+        elif choice == "yeşil":
+            landed_number = random.choice(red_numbers)
+        elif choice == "tek":
+            landed_number = random.choice([n for n in range(0, 37) if n == 0 or n % 2 == 0])
+        elif choice == "cift":
+            landed_number = random.choice([n for n in range(0, 37) if n == 0 or n % 2 != 0])
+        elif choice.isdigit():
+            secilen = int(choice)
+            digerleri = [n for n in range(0, 37) if n != secilen]
+            landed_number = random.choice(digerleri)
+        else:
+            landed_number = random.randint(0, 36)
 
     if landed_number == 0:
         color_name = "🟢 YEŞİL (0)"
@@ -254,43 +318,36 @@ async def rulet(ctx, choice: str, amount_str: str):
     else:
         color_name = f"⬛ SİYAH ({landed_number})"
 
-    won = 0
     won_flag = False
-
     if choice.isdigit() and int(choice) == landed_number:
-        won = amount * 35
         won_flag = True
     elif choice == "kırmızı" and landed_number in red_numbers:
-        won = amount * 2
         won_flag = True
     elif choice == "siyah" and landed_number in black_numbers:
-        won = amount * 2
         won_flag = True
     elif choice == "yeşil" and landed_number == 0:
-        won = amount * 14
         won_flag = True
     elif choice == "tek" and landed_number != 0 and landed_number % 2 != 0:
-        won = amount * 2
         won_flag = True
     elif choice == "cift" and landed_number != 0 and landed_number % 2 == 0:
-        won = amount * 2
         won_flag = True
 
     if won_flag:
-        update_balance(user_id, current_bal + won)
-        await msg.edit(content=f"🎯 Çark durdu! Top **{color_name}** üzerinde durdu! Tebrikler kazandın! +**{won:,} 🪙**")
+        kazanc = amount * 2
+        update_balance(user_id, current_bal + kazanc)
+        await msg.edit(content=f"🎯 Çark durdu! Top **{color_name}** üzerinde durdu! Tebrikler kazandın! +**{kazanc:,} 🪙**")
     else:
         update_balance(user_id, current_bal - amount)
         await msg.edit(content=f"😢 Çark durdu! Top **{color_name}** üzerinde durdu. Kaybettin kanka! -**{amount:,} 🪙**")
 
-# --- KASA AÇMA SİSTEMİ ---
+# --- KASA AÇMA SİSTEMİ (%5 oran) ---
 @bot.command(name="kasa", aliases=["lootbox"])
 @commands.cooldown(1, 10, commands.BucketType.user)
 async def open_box(ctx, box_type: str = None):
     user_id = str(ctx.author.id)
     
     if not box_type or box_type.lower() not in ["normal", "lüks", "luks", "mega"]:
-        return await ctx.send("Hangi kasayı açmak istiyorsun kanka? Seçenekler:\n• `kasa normal` (10.000 🪙 - En az 1.000)\n• `kasa lüks` (50.000 🪙 - En az 10.000)\n• `kasa mega` (100.000 🪙 - En az 50.000)")
+        return await ctx.send("Hangi kasayı açmak istiyorsun kanka? Seçenekler:\n• `kasa normal` (10.000 🪙)\n• `kasa lüks` (50.000 🪙)\n• `kasa mega` (100.000 🪙)")
         
     box_type = box_type.lower()
     
@@ -313,18 +370,18 @@ async def open_box(ctx, box_type: str = None):
     
     if box_type == "normal":
         reward = random.choices(
-            [random.randint(1000, 5000), random.randint(5001, 15000), random.randint(15001, 25000)],
-            weights=[50, 35, 15], k=1
+            [random.randint(500, 2000), random.randint(2001, 5000), random.randint(5001, 10000)],
+            weights=[80, 15, 5], k=1
         )[0]
     elif box_type == "lüks":
         reward = random.choices(
-            [random.randint(10000, 30000), random.randint(30001, 55000), random.randint(55001, 80000)],
-            weights=[50, 35, 15], k=1
+            [random.randint(2000, 8000), random.randint(8001, 18000), random.randint(18001, 30000)],
+            weights=[80, 15, 5], k=1
         )[0]
     else:
         reward = random.choices(
-            [random.randint(50000, 80000), random.randint(80001, 120000), random.randint(120001, 180000)],
-            weights=[50, 35, 15], k=1
+            [random.randint(8000, 20000), random.randint(20001, 40000), random.randint(40001, 70000)],
+            weights=[80, 15, 5], k=1
         )[0]
         
     update_balance(user_id, get_balance(user_id) + reward)
@@ -477,7 +534,7 @@ async def hpay(ctx, member: discord.Member, amount: int):
     receiver_id = str(member.id)
     
     if sender_id == receiver_id:
-        await ctx.send("Kendine nar gönderemezsin kanka!")
+        await ctx.send("Kendine para gönderemezsin kanka!")
         return
 
     if amount <= 0:
@@ -499,37 +556,41 @@ async def hpay(ctx, member: discord.Member, amount: int):
     await ctx.send(f"💸 **{member.name}** kişisine **{amount:,} 🪙** gönderildi!")
 
 # ==========================================
-# --- COINFLIP (HF) - 20'de 1 Kesin Kazanma ---
+# --- COINFLIP (HF) - %5 Oran & 2x Çarpan ---
 # ==========================================
 @bot.command(name="hf")
 @commands.cooldown(1, 10, commands.BucketType.user)
 async def coinflip(ctx, amount_str: str):
     user_id = str(ctx.author.id)
     amount = get_bet_amount(user_id, amount_str)
+    if amount == -1:
+        return await ctx.send(f"⚠️ Tek seferde en fazla **{MAX_BET:,} 🪙** bahis oynayabilirsin kanka!")
     if not amount or amount <= 0:
         return await ctx.send("Geçersiz miktar kanka! Örnek: `hf 1000`")
     current_bal = get_balance(user_id)
     if current_bal < amount:
         return await ctx.send("Yetersiz bakiye kanka!")
 
-    forced_win = check_and_update_pity(user_id)
-    win_chance = forced_win or random.choices([True, False], weights=[5, 95], k=1)[0]
+    win_chance = random.choices([True, False], weights=[5, 95], k=1)[0]
 
     if win_chance:
-        update_balance(user_id, current_bal + amount)
-        await ctx.send(f"🪙 **{ctx.author.name}** kazandı! +**{amount * 2:,} 🪙**")
+        kazanc = amount * 2
+        update_balance(user_id, current_bal + kazanc)
+        await ctx.send(f"🪙 **{ctx.author.name}** kazandı! +**{kazanc:,} 🪙**")
     else:
         update_balance(user_id, current_bal - amount)
         await ctx.send(f"🪙 **{ctx.author.name}** kaybetti! -**{amount:,} 🪙** :c")
 
 # ==========================================
-# --- SLOTS (HS / WS) - 20'de 1 Kesin Kazanma ---
+# --- SLOTS (HS / WS) - %5 Oran & 2x Çarpan ---
 # ==========================================
 @bot.command(name="hs", aliases=["ws"])
 @commands.cooldown(1, 10, commands.BucketType.user)
 async def slots(ctx, amount_str: str):
     user_id = str(ctx.author.id)
     amount = get_bet_amount(user_id, amount_str)
+    if amount == -1:
+        return await ctx.send(f"⚠️ Tek seferde en fazla **{MAX_BET:,} 🪙** bahis oynayabilirsin kanka!")
     if not amount or amount <= 0:
         return await ctx.send("Geçersiz miktar kanka! Örnek: `hs 1000` veya `ws all`")
     current_bal = get_balance(user_id)
@@ -548,8 +609,7 @@ async def slots(ctx, amount_str: str):
     msg = await ctx.send(embed=spin_embed)
     await asyncio.sleep(0.8)
 
-    forced_win = check_and_update_pity(user_id)
-    win_chance = forced_win or random.choices([True, False], weights=[5, 95], k=1)[0]
+    win_chance = random.choices([True, False], weights=[5, 95], k=1)[0]
 
     if win_chance:
         chosen_fruit = random.choice(fruits)
@@ -572,16 +632,11 @@ async def slots(ctx, amount_str: str):
             s2 = random.choice(fruits)
             s3 = random.choice(fruits)
 
-    if s1 == s2 == s3:
-        won = amount * 5
-        update_balance(user_id, current_bal + won)
-        result_text = f"👑 Jackpot! Üçlü eşleşme (+{won:,} 🪙)"
+    if win_chance:
+        kazanc = amount * 2
+        update_balance(user_id, current_bal + kazanc)
+        result_text = f"👑 Kazandın! +{kazanc:,} 🪙"
         embed_color = discord.Color.gold()
-    elif s1 == s2 or s2 == s3:
-        won = amount * 2
-        update_balance(user_id, current_bal + won)
-        result_text = f"✨ Kazandın! İkili eşleşme (+{won:,} 🪙)"
-        embed_color = discord.Color.green()
     else:
         update_balance(user_id, current_bal - amount)
         result_text = f"😢 Kaybettin, sağlık olsun! (-{amount:,} 🪙)"
@@ -597,10 +652,10 @@ async def slots(ctx, amount_str: str):
     await msg.edit(embed=final_embed)
 
 # ==========================================
-# --- BLACKJACK (HJ) - 20'de 1 Kesin Kazanma ---
+# --- BLACKJACK (HJ) - 2x Çarpan ---
 # ==========================================
 class BlackjackView(discord.ui.View):
-    def __init__(self, ctx, user_id, amount, forced_win):
+    def __init__(self, ctx, user_id, amount):
         super().__init__(timeout=60)
         self.ctx = ctx
         self.user_id = user_id
@@ -609,12 +664,8 @@ class BlackjackView(discord.ui.View):
         self.cards = [("🂡", 11), ("🂢", 2), ("🂣", 3), ("🂤", 4), ("🂥", 5), ("🂦", 6), ("🂧", 7), ("🂨", 8), ("🂩", 9), ("🂪", 10), ("🂫", 10), ("🂭", 10), ("🂮", 10),
                      ("🃁", 11), ("🃂", 2), ("🃃", 3), ("🃄", 4), ("🃅", 5), ("🃆", 6), ("🃇", 7), ("🃈", 8), ("🃉", 9), ("🃊", 10), ("🃋", 10), ("🃍", 10), ("🃎", 10)]
         
-        if forced_win:
-            self.player_hand = [("🂪", 10), ("🂩", 9)]
-            self.dealer_hand = [("🂥", 5), ("🂤", 4)]
-        else:
-            self.player_hand = [random.choice(self.cards), random.choice(self.cards)]
-            self.dealer_hand = [random.choice(self.cards), random.choice(self.cards)]
+        self.player_hand = [random.choice(self.cards), random.choice(self.cards)]
+        self.dealer_hand = [random.choice(self.cards), random.choice(self.cards)]
 
     def get_score(self, hand):
         score = sum(card[1] for card in hand)
@@ -675,8 +726,9 @@ class BlackjackView(discord.ui.View):
             
         current_bal = get_balance(self.user_id)
         if d_score > 21 or p_score > d_score:
-            update_balance(self.user_id, current_bal + self.amount)
-            text = f"🎉 **Masayı yendin ve kazandın! +{self.amount * 2:,} 🪙**"
+            kazanc = self.amount * 2
+            update_balance(self.user_id, current_bal + kazanc)
+            text = f"🎉 **Masayı yendin ve kazandın! +{kazanc:,} 🪙**"
             embed_color = discord.Color.green()
         elif p_score == d_score:
             text = f"🤝 **Berabere! Paran iade edildi.**"
@@ -697,13 +749,14 @@ class BlackjackView(discord.ui.View):
 async def hj_game(ctx, amount_str: str):
     user_id = str(ctx.author.id)
     amount = get_bet_amount(user_id, amount_str)
+    if amount == -1:
+        return await ctx.send(f"⚠️ Tek seferde en fazla **{MAX_BET:,} 🪙** bahis oynayabilirsin kanka!")
     if not amount or amount <= 0:
         return await ctx.send("Geçersiz miktar kanka! Örnek: `hj 1000`")
     if get_balance(user_id) < amount:
         return await ctx.send("Yetersiz bakiye kanka!")
 
-    forced_win = check_and_update_pity(user_id)
-    view = BlackjackView(ctx, user_id, amount, forced_win)
+    view = BlackjackView(ctx, user_id, amount)
     initial_text = f"🎲 Kartlar dağıtıldı! Kart çekmek için 👊, durmak için 🛑 butonuna bas."
     await ctx.send(embed=view.build_embed(initial_text), view=view)
 
@@ -731,7 +784,7 @@ async def hbilgi(ctx):
     )
     embed.add_field(name="💰 Ekonomi Komutları", value="`!h` - Cüzdanını görürsün\n`!daily` - Günlük ödülünü alırsın\n`!hpay` - Başkasına para gönderirsin\n`!lb` - Servet sıralamasına bakarsın", inline=False)
     embed.add_field(name="🎲 Kumar & Şans Oyunları (10sn Cooldown)", value="`!hf` - Coinflip (Yazı/Tura)\n`!hs` (veya `!ws`) - Slots\n`!hj` - Blackjack\n`!rulet` - Gerçek Rulet (Animasyonlu)\n`!kasa` - Kasa açma", inline=False)
-    embed.add_field(name="🛠️ Yönetici Komutları", value="`!add` - Para eklersin\n`!hparasil` - Para silersin\n`!sil` - Mesaj temizlersin", inline=False)
+    embed.add_field(name="🛠️ Yönetici Komutları", value="`!hyasakla` - Bulunduğun kanalı yasaklarsın\n`!add` - Para eklersin\n`!hparasil` - Para silersin\n`!sil` - Mesaj temizlersin", inline=False)
     embed.set_footer(text="HelperX ile iyi eğlenceler dileriz!")
     await ctx.send(embed=embed)
 
