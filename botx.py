@@ -8,11 +8,15 @@ from discord.ext import commands, tasks
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.dm_messages = True # DM mesajlarını okuyabilmek için aktif edildi
 
 bot = commands.Bot(command_prefix="", intents=intents, case_insensitive=True)
 
 # Sadece izin verilen kanal ID'si
 ALLOWED_CHANNEL_ID = 1535753835308392509
+
+# Senin Discord Kullanıcı ID'n (DM Modmail için)
+SAHIP_ID = 1288632959674617912
 
 # --- KALICI DİSK VERİTABANI SİSTEMİ (Paralar asla silinmez!) ---
 db_path = "/var/data/economy.db" if os.path.exists("/var/data") else "economy.db"
@@ -98,6 +102,9 @@ def get_bet_amount(user_id, amount_str):
 # --- OTOMATİK KANAL KONTROLÜ (Global Check) ---
 @bot.check
 async def globally_block_channels(ctx):
+    # Eğer mesaj DM'den (özel mesajdan) atıldıysa kanal kontrolüne takılmasın, direkt geçsin!
+    if ctx.guild is None:
+        return True
     if ctx.channel.id != ALLOWED_CHANNEL_ID:
         return False
     return True
@@ -118,6 +125,45 @@ async def on_ready():
     print(f"Bot aktif: {bot.user.name}")
     if not bank_interest.is_running():
         bank_interest.start()
+
+# --- DM MODMAIL SİSTEMİ (Çift Yönlü Köprü) ---
+@bot.event
+async def on_message(message):
+    # 1. Botun kendi attığı mesajları yoksay
+    if message.author == bot.user:
+        return
+
+    # 2. KULLANICI BOTA DM ATTIĞINDA (Sana yönlendirme)
+    if message.guild is None and message.author.id != SAHIP_ID:
+        try:
+            sahip = await bot.fetch_user(SAHIP_ID)
+            await sahip.send(f"📩 **Yeni DM Mesajı!**\nKimden: {message.author} (ID: `{message.author.id}`)\nMesaj: {message.content}")
+        except Exception as e:
+            print(f"Modmail hatası (Kullanıcıdan sana): {e}")
+        return
+
+    # 3. SEN BOTA DM'DEN CEVAP ATTIĞINDA (Kullanıcıya iletme)
+    if message.guild is None and message.author.id == SAHIP_ID:
+        parcalar = message.content.split(" ", 1)
+        if len(parcalar) < 2:
+            try:
+                await message.author.send("⚠️ Hatalı kullanım kanka! Örnek format: `[Kullanıcı_ID] [Mesajın]`")
+            except:
+                pass
+            return
+        
+        hedef_id = parcalar[0]
+        gercek_cevap = parcalar[1]
+
+        try:
+            hedef_kullanici = await bot.fetch_user(int(hedef_id))
+            await hedef_kullanici.send(f"💬 **Destek Ekibinden Mesaj:** {gercek_cevap}")
+            await message.author.send(f"✅ Mesaj başarıyla **{hedef_kullanici}** adlı kullanıcıya iletildi.")
+        except Exception as e:
+            await message.author.send(f"❌ Mesaj gönderilemedi! Hata: {e}")
+        return
+
+    await bot.process_commands(message)
 
 # --- GÜNLÜK ÖDÜL ---
 @bot.command(name="daily")
@@ -564,9 +610,8 @@ class BlackjackView(discord.ui.View):
                      ("🃁", 11), ("🃂", 2), ("🃃", 3), ("🃄", 4), ("🃅", 5), ("🃆", 6), ("🃇", 7), ("🃈", 8), ("🃉", 9), ("🃊", 10), ("🃋", 10), ("🃍", 10), ("🃎", 10)]
         
         if forced_win:
-            # 20. elde kesin kazanma garantisi için avantajlı el
-            self.player_hand = [("🂪", 10), ("🂩", 9)] # 19 başlangıç
-            self.dealer_hand = [("🂥", 5), ("🂤", 4)]  # 9 başlangıç (Krupiye zayıf)
+            self.player_hand = [("🂪", 10), ("🂩", 9)]
+            self.dealer_hand = [("🂥", 5), ("🂤", 4)]
         else:
             self.player_hand = [random.choice(self.cards), random.choice(self.cards)]
             self.dealer_hand = [random.choice(self.cards), random.choice(self.cards)]
@@ -705,4 +750,4 @@ async def hdenemekomutu3(ctx):
     bank = get_bank(user_id)
     await ctx.send(f"🔍 **{ctx.author.name}**, veritabanı kontrolü başarılı (Komut 3)!\n🪙 Cüzdan: **{bal:,}** coin\n🏦 Banka: **{bank:,}** coin")
 
-bot.run(os.getenv("DISCORD_TOKEN", "TOKEN_BURAYA")) 
+bot.run(os.getenv("DISCORD_TOKEN", "TOKEN_BURAYA"))
